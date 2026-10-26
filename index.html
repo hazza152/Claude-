@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>BraFit</title>
+  <meta name="description" content="Find your bra size from two photos. Everything stays on your phone.">
+  <link rel="stylesheet" href="css/app.css">
+  <script type="importmap">
+    { "imports": { "@mediapipe/tasks-vision": "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/vision_bundle.mjs" } }
+  </script>
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+  <main>
+    <!-- 18+ check -->
+    <section id="gate" class="screen">
+      <h1>BraFit</h1>
+      <p class="lead">Find your bra size from two photos.</p>
+      <p>You'll take a front and a side photo in a fitted top or unpadded bra. You need to be 18 or over to use this.</p>
+      <p class="privacy">Your photos are processed on this device and are never uploaded or saved.</p>
+      <button id="confirm-age" class="primary">I'm 18 or over</button>
+    </section>
+
+    <!-- Height and how-to -->
+    <section id="setup" class="screen" hidden>
+      <h1>Before you start</h1>
+      <label class="field">
+        <span>Your height (no shoes)</span>
+        <div class="height-inputs">
+          <span id="height-cm-wrap"><input id="height-cm" type="number" inputmode="decimal" min="120" max="220" step="0.5" placeholder="165"> cm</span>
+          <span id="height-ftin-wrap" hidden>
+            <input id="height-ft" type="number" inputmode="numeric" min="4" max="7" placeholder="5"> ft
+            <input id="height-in" type="number" inputmode="decimal" min="0" max="11.5" step="0.5" placeholder="5"> in
+          </span>
+          <button id="toggle-units" class="link" type="button">Use ft/in</button>
+        </div>
+        <small>Measured accurately: every centimetre out changes your results by about 0.6%.</small>
+      </label>
+
+      <ol class="steps">
+        <li><strong>Wear an unpadded, unlined bra or a thin fitted top.</strong> Padding and loose tops throw off the measurement.</li>
+        <li><strong>Tie long hair up and take your shoes off.</strong></li>
+        <li><strong>Prop your phone upright at chest height, about 2.5 m away</strong>, so your whole body fits on screen. A plain wall behind you helps.</li>
+        <li><strong>Front photo:</strong> face the camera, feet together, arms held out about 45° from your sides.</li>
+        <li><strong>Side photo:</strong> turn sideways, arms relaxed by your sides. Stand naturally and breathe normally.</li>
+      </ol>
+      <p id="setup-error" class="error" hidden></p>
+      <button id="start" class="primary">Continue</button>
+    </section>
+
+    <!-- Capture -->
+    <section id="capture" class="screen" hidden>
+      <p class="step-label" id="capture-step">Photo 1 of 2</p>
+      <h1 id="capture-title">Front photo</h1>
+      <p id="capture-hint"></p>
+
+      <div class="stage">
+        <video id="video" playsinline muted hidden></video>
+        <canvas id="preview" hidden></canvas>
+        <div id="countdown" class="countdown" hidden></div>
+        <div id="stage-placeholder" class="stage-placeholder">Camera off</div>
+      </div>
+
+      <p id="capture-error" class="error" hidden></p>
+      <p id="capture-status" class="status" hidden></p>
+
+      <div class="actions" id="camera-actions">
+        <button id="timer" class="primary">Start 10-second timer</button>
+        <button id="switch-camera">Switch camera</button>
+        <label class="button">Upload a photo<input id="upload" type="file" accept="image/*" hidden></label>
+      </div>
+      <div class="actions" id="review-actions" hidden>
+        <button id="accept" class="primary">Use this photo</button>
+        <button id="retake">Retake</button>
+      </div>
+    </section>
+
+    <!-- Result -->
+    <section id="result" class="screen" hidden>
+      <p class="step-label">Your starting size</p>
+      <div class="size" id="size-uk"></div>
+      <p class="size-alt" id="size-alt"></p>
+
+      <div class="card" id="sisters-card">
+        <h2>Also try</h2>
+        <p class="sisters" id="sisters"></p>
+        <p class="muted">Same cup volume on a different band. Go down a band if the band rides up; go up if it digs in.</p>
+      </div>
+
+      <div class="card">
+        <h2>Measurements</h2>
+        <dl id="measurements"></dl>
+        <p class="muted" id="method-note" hidden>We couldn't see a clear line under your bust, so the underbust is less certain. A retake in an unpadded bra may help.</p>
+      </div>
+
+      <div class="card">
+        <h2>Where we measured</h2>
+        <div class="thumbs"><canvas id="thumb-front"></canvas><canvas id="thumb-side"></canvas></div>
+        <p class="muted">If the lines aren't under and across your bust, retake the photos.</p>
+      </div>
+
+      <div class="card">
+        <h2>Shape</h2>
+        <p id="shape"></p>
+      </div>
+
+      <div class="card">
+        <h2>Check the fit</h2>
+        <ul>
+          <li>The band sits level and snug on the loosest hook.</li>
+          <li>No gaping or spilling at the top of the cup.</li>
+          <li>The centre of the underwire lies flat against your breastbone.</li>
+          <li>Underwires sit behind the breast tissue at the sides, not on it.</li>
+        </ul>
+      </div>
+
+      <p class="muted">Sizes vary between brands, so treat this as a starting point. Nothing has been saved.</p>
+      <button id="again" class="primary">Start again</button>
+    </section>
+
+    <div id="loading" class="loading" hidden><div class="spinner"></div><p id="loading-text">Loading…</p></div>
+  </main>
+</body>
+</html>

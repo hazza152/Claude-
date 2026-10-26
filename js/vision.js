@@ -1,0 +1,182 @@
+// Runs the on-device vision models on a photo and prepares the silhouette for measuring.
+// Photos never leave the browser: the models are downloaded once and run locally.
+
+import { FilesetResolver, ImageSegmenter, PoseLandmarker } from '@mediapipe/tasks-vision';
+import { figureExtent, heightAt, rowRuns, toCentimetres, torsoRows } from './measure.js';
+
+const WASM = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm';
+const POSE_MODEL =
+  'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task';
+const SEGMENT_MODEL =
+  'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite';
+
+// BlazePose landmark indices.
+const NOSE = 0;
+const L_SHOULDER = 11;
+const R_SHOULDER = 12;
+const L_ELBOW = 13;
+const R_ELBOW = 14;
+const L_WRIST = 15;
+const R_WRIST = 16;
+const L_HIP = 23;
+const R_HIP = 24;
+const L_ANKLE = 27;
+const R_ANKLE = 28;
+
+const MAX_PHOTO_SIDE = 2400;
+
+let models;
+
+export function loadModels() {
+  models ??= (async () => {
+    const files = await FilesetResolver.forVisionTasks(WASM);
+    const [pose, segmenter] = await Promise.all([
+      PoseLandmarker.createFromOptions(files, {
+        baseOptions: { modelAssetPath: POSE_MODEL, delegate: 'CPU' },
+        runningMode: 'IMAGE',
+        numPoses: 2,
+      }),
+      ImageSegmenter.createFromOptions(files, {
+        baseOptions: { modelAssetPath: SEGMENT_MODEL, delegate: 'CPU' },
+        runningMode: 'IMAGE',
+        outputConfidenceMasks: true,
+        outputCategoryMask: false,
+      }),
+    ]);
+    return { pose, segmenter, labels: segmenter.getLabels() };
+  })();
+  models.catch(() => (models = undefined));
+  return models;
+}
+
+export class PhotoProblem extends Error {}
+
+/**
+ * Finds the person, checks the photo is usable, and returns the torso outline in cm.
+ * @param {ImageBitmap|HTMLCanvasElement} source
+ * @param {'front'|'side'} view
+ */
+export async function analysePhoto(source, view, statureCm) {
+  const { pose, segmenter, labels } = await loadModels();
+  const photo = toCanvas(source);
+  const W = photo.width;
+  const H = photo.height;
+
+  const detected = pose.detect(photo).landmarks;
+  if (detected.length === 0) throw new PhotoProblem("Couldn't find a person in the photo.");
+  if (detected.length > 1) throw new PhotoProblem('Only one person should be in the photo.');
+  const lm = detected[0].map((p) => ({ x: p.x * W, y: p.y * H, visibility: p.visibility ?? 1 }));
+  for (const i of [NOSE, L_SHOULDER, R_SHOULDER, L_HIP, R_HIP, L_ANKLE, R_ANKLE]) {
+    if (lm[i].y < 0 || lm[i].y > H || lm[i].x < 0 || lm[i].x > W) {
+      throw new PhotoProblem('Your whole body, head to feet, needs to be in the photo. Move the phone further away.');
+    }
+  }
+
+  const mid = (a, b) => ({ x: (lm[a].x + lm[b].x) / 2, y: (lm[a].y + lm[b].y) / 2 });
+  const shoulders = mid(L_SHOULDER, R_SHOULDER);
+  const hips = mid(L_HIP, R_HIP);
+  const ankles = mid(L_ANKLE, R_ANKLE);
+  const bodyPx = ankles.y - lm[NOSE].y;
+  if (bodyPx < H * 0.4) throw new PhotoProblem("You're too far away. Fill more of the frame, head to feet.");
+
+  // Upright check: the line from hips to shoulders should be close to vertical.
+  const lean = Math.abs(shoulders.x - hips.x) / (hips.y - shoulders.y);
+  if (lean > 0.12) throw new PhotoProblem('Stand up straight, and make sure the phone is upright, not tilted.');
+
+  const shoulderSpread = Math.hypot(lm[L_SHOULDER].x - lm[R_SHOULDER].x, lm[L_SHOULDER].y - lm[R_SHOULDER].y) / bodyPx;
+  if (view === 'front' && shoulderSpread < 0.16) throw new PhotoProblem('Face the camera straight on for the front photo.');
+  if (view === 'side' && shoulderSpread > 0.1) throw new PhotoProblem('Turn fully sideways for the side photo.');
+
+  // Height scale: segment the whole figure at the best resolution the model allows.
+  const centerX = (shoulders.x + hips.x) / 2;
+  const figureBox = squareBox(centerX, (lm[NOSE].y + ankles.y) / 2, bodyPx * 1.4);
+  const figureMask = segment(segmenter, labels, photo, figureBox, { includeHair: true });
+  const figure = figureExtent(figureMask);
+  if (!figure || figure.headTopY <= figureBox.y + 1 || figure.floorY >= figureBox.y + figureBox.size - 1) {
+    throw new PhotoProblem('Your whole body, head to feet, needs to be in the photo.');
+  }
+
+  // Torso outline: a tight crop gives the model several times more detail. Hair is left
+  // out so long hair doesn't widen the outline.
+  const torsoPx = hips.y - shoulders.y;
+  const torsoBox = squareBox(centerX, (shoulders.y + hips.y) / 2, torsoPx * 1.6);
+  const torsoMask = segment(segmenter, labels, photo, torsoBox, { includeHair: false });
+
+  if (view === 'front') {
+    // The arms must be clear of the body or the chest looks wider than it is: no elbow or
+    // wrist between shoulder and hip height may sit inside the torso outline.
+    for (const i of [L_ELBOW, R_ELBOW, L_WRIST, R_WRIST]) {
+      const p = lm[i];
+      if (p.y <= shoulders.y || p.y >= hips.y) continue;
+      const row = Math.round((p.y - torsoBox.y) / torsoMask.toImage.sy - 0.5);
+      const cx = (centerX - torsoBox.x) / torsoMask.toImage.sx;
+      const px = (p.x - torsoBox.x) / torsoMask.toImage.sx;
+      const torso = rowRuns(torsoMask.data, torsoMask.width, row).find(([a, b]) => a <= cx && cx <= b);
+      if (torso && px > torso[0] - 2 && px < torso[1] + 2) {
+        throw new PhotoProblem('Hold your arms out from your sides so there is a gap between your arms and body.');
+      }
+    }
+  }
+
+  const scale = { figure, statureCm };
+  const outline = torsoRows(torsoMask, centerX);
+  return {
+    view,
+    photo,
+    figure,
+    centerX,
+    rows: toCentimetres(outline, { figure, centerX, statureCm }),
+    /** Torso edges in image pixels, for drawing. */
+    outline,
+    shoulderH: heightAt(shoulders.y, scale),
+    hipH: heightAt(hips.y, scale),
+    // In a side photo the face points forward.
+    facing: lm[NOSE].x >= centerX ? 1 : -1,
+    /** Image y for a height above the floor, for drawing the measured lines. */
+    yAt: (hCm) => figure.floorY - (hCm * (figure.floorY - figure.headTopY)) / statureCm,
+  };
+}
+
+function toCanvas(source) {
+  const k = Math.min(1, MAX_PHOTO_SIDE / Math.max(source.width, source.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(source.width * k);
+  canvas.height = Math.round(source.height * k);
+  canvas.getContext('2d').drawImage(source, 0, 0, canvas.width, canvas.height);
+  return canvas;
+}
+
+/** A square region centred on (cx, cy), in image pixels. May extend past the photo edges. */
+function squareBox(cx, cy, size) {
+  return { x: cx - size / 2, y: cy - size / 2, size };
+}
+
+/**
+ * Segments one square region of the photo. The model works at 256×256, so the smaller the
+ * region the finer the outline. Areas outside the photo are padded black.
+ */
+function segment(segmenter, labels, photo, box, { includeHair }) {
+  const side = 512;
+  const crop = document.createElement('canvas');
+  crop.width = side;
+  crop.height = side;
+  const ctx = crop.getContext('2d');
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, side, side);
+  const k = side / box.size;
+  ctx.drawImage(photo, -box.x * k, -box.y * k, photo.width * k, photo.height * k);
+
+  const result = segmenter.segment(crop);
+  try {
+    const masks = result.confidenceMasks;
+    const background = masks[labels.indexOf('background')].getAsFloat32Array();
+    const hair = masks[labels.indexOf('hair')].getAsFloat32Array();
+    const { width, height } = masks[0];
+    const data = new Float32Array(width * height);
+    for (let i = 0; i < data.length; i++) data[i] = 1 - background[i] - (includeHair ? 0 : hair[i]);
+    const px = box.size / width;
+    return { data, width, height, toImage: { x0: box.x, y0: box.y, sx: px, sy: box.size / height } };
+  } finally {
+    result.close();
+  }
+}
