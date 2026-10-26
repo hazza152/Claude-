@@ -1,5 +1,5 @@
-// A simple 3D standing body, its true tape-measure circumferences, and rendered front and
-// side silhouette masks (with soft edges, like a segmentation model's output).
+// A simple 3D standing body and rendered front and side silhouette masks (with soft edges,
+// like a segmentation model's output).
 
 export function makeBody({
   stature = 1.65,
@@ -39,9 +39,6 @@ export function makeBody({
     shoulderHeight,
     hipHeight: 0.53 * stature,
     section,
-    /** What a tape measure reads at height y: the convex hull perimeter of the section. */
-    tapeAt: (y) => hullPerimeter(section(y)),
-    ribPerimeter: ellipse(ribHalfWidth, ribHalfDepth),
     /** Spans of body (in metres, horizontal) at height y, for a front or side view. */
     spans(y, view) {
       const out = [];
@@ -110,27 +107,4 @@ export function renderView(body, view, { pxPerMetre = 900, margin = 0.1 } = {}) 
     shoulderY: toImageY(body.shoulderHeight),
     hipY: toImageY(body.hipHeight),
   };
-}
-
-export function hullPerimeter(points) {
-  const pts = [...points].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-  const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
-  const lower = [];
-  for (const p of pts) {
-    while (lower.length >= 2 && cross(lower.at(-2), lower.at(-1), p) <= 0) lower.pop();
-    lower.push(p);
-  }
-  const upper = [];
-  for (const p of pts.reverse()) {
-    while (upper.length >= 2 && cross(upper.at(-2), upper.at(-1), p) <= 0) upper.pop();
-    upper.push(p);
-  }
-  const hull = lower.slice(0, -1).concat(upper.slice(0, -1));
-  let total = 0;
-  for (let i = 0; i < hull.length; i++) total += Math.hypot(...hull[(i + 1) % hull.length].map((v, k) => v - hull[i][k]));
-  return total;
-}
-
-function ellipse(a, b) {
-  return Math.PI * (3 * (a + b) - Math.sqrt((3 * a + b) * (a + 3 * b)));
 }

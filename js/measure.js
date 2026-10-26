@@ -107,13 +107,30 @@ export const DEFAULT_OPTIONS = {
   // Below the fold the front of the body is near vertical; on the underside of the breast
   // it recedes fast. This is the change-in-depth-per-height boundary between the two.
   foldSlope: 0.3,
-  // Ratio of a tape measurement to the ellipse through the silhouette's width and depth.
-  // Ribcage cross-sections are close to ellipses. Across the bust the shape is fuller than
-  // an ellipse; on modelled busts from AA to G-ish the tape reads 1.7-3.5% more. Both are
-  // geometric starting points to be refitted against real fittings.
-  underbustShape: 1.0,
-  bustShape: 1.027,
+  circumference: null, // defaults to CIRCUMFERENCE_MODEL
 };
+
+/**
+ * Tape circumference from silhouette width and depth: an ellipse through them, scaled by
+ * a factor because real torso cross-sections are boxier than ellipses.
+ *
+ * Fitted to the 1,986 women of the ANSUR II survey (US Army, 2012), who were measured with
+ * a tape and with calipers at the same level. Refit with calibration/fit_ansur.py.
+ */
+export const CIRCUMFERENCE_MODEL = {
+  // Bust: tape over the bust points vs chest breadth and depth there. The deeper the chest
+  // is relative to its width, the further the tape departs from an ellipse.
+  // Typical error 1.7 cm (mean absolute, cross-validated).
+  bust: { base: 1.0096, perDepthRatio: 0.1695 },
+  // ANSUR II has no underbust measurement. The waist, also soft tissue over the trunk, is
+  // the nearest section measured both ways (typical error 1.4 cm). Refit this one first
+  // when real underbust data is available.
+  underbust: { base: 1.061, perDepthRatio: 0 },
+};
+
+export function tapeCircumference(width, depth, factor) {
+  return (factor.base + (factor.perDepthRatio * depth) / width) * ellipsePerimeter(width / 2, depth / 2);
+}
 
 /**
  * @param {object} input
@@ -125,6 +142,7 @@ export const DEFAULT_OPTIONS = {
  */
 export function measureTorso(input, options = {}) {
   const o = { ...DEFAULT_OPTIONS, ...options };
+  const model = o.circumference ?? CIRCUMFERENCE_MODEL;
   const { front, side, facing, shoulderH, hipH } = input;
   const torso = shoulderH - hipH;
   if (!(torso > 20)) throw new MeasureError('pose', 'Could not find shoulders and hips.');
@@ -166,8 +184,8 @@ export function measureTorso(input, options = {}) {
   if (underbust === null) throw new MeasureError('bust', 'Could not find the underbust line.');
 
   return {
-    underbustCm: perimeter[underbust] * o.underbustShape,
-    bustCm: perimeter[bust] * o.bustShape,
+    underbustCm: tapeCircumference(width[underbust], depth[underbust], model.underbust),
+    bustCm: tapeCircumference(width[bust], depth[bust], model.bust),
     projectionCm: anterior[bust] - anterior[underbust],
     underbustH: heights[underbust],
     bustH: heights[bust],

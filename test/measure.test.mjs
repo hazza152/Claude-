@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { makeBody, renderView } from './synthetic.mjs';
-import { figureExtent, torsoRows, toCentimetres, heightAt, measureTorso, rowRuns } from '../js/measure.js';
+import { readFileSync } from 'node:fs';
+import { figureExtent, torsoRows, toCentimetres, heightAt, measureTorso, rowRuns, tapeCircumference, CIRCUMFERENCE_MODEL } from '../js/measure.js';
 
 /** Runs the same steps the app does, on rendered silhouettes of a synthetic body. */
 function measureBody(params = {}, { pxPerMetre = 900, sideFacing = 1, statureError = 0 } = {}) {
@@ -23,7 +24,22 @@ function measureBody(params = {}, { pxPerMetre = 900, sideFacing = 1, statureErr
     shoulderH: heightAt(r.shoulderY, { figure, statureCm }),
     hipH: heightAt(r.hipY, { figure, statureCm }),
   });
-  return { m, body, tapeAtApex: body.tapeAt(body.bustHeight) * 100, rib: body.ribPerimeter * 100 };
+  return { m, body };
+}
+
+/** True width and depth (cm) of the synthetic torso at a height (cm). */
+function extents(body, hCm) {
+  const s = body.section(hCm / 100);
+  const span = (k) => (Math.max(...s.map((p) => p[k])) - Math.min(...s.map((p) => p[k]))) * 100;
+  return { width: span(0), depth: span(1) };
+}
+
+function assertSilhouette(m, body, tolerance = 0.3) {
+  for (const line of ['bust', 'underbust']) {
+    const truth = extents(body, m[`${line}H`]);
+    assert.ok(Math.abs(m[line].width - truth.width) < tolerance, `${line} width ${m[line].width} vs ${truth.width}`);
+    assert.ok(Math.abs(m[line].depth - truth.depth) < tolerance, `${line} depth ${m[line].depth} vs ${truth.depth}`);
+  }
 }
 
 function mirror(mask) {
@@ -39,12 +55,11 @@ const bodies = {
 };
 
 for (const [name, params] of Object.entries(bodies)) {
-  test(`measures the ${name} body to within 1 cm`, () => {
-    const { m, body, tapeAtApex, rib } = measureBody(params);
-    assert.ok(Math.abs(m.underbustCm - rib) < 1, `underbust ${m.underbustCm} vs ${rib}`);
-    assert.ok(Math.abs(m.bustCm - tapeAtApex) < 1, `bust ${m.bustCm} vs ${tapeAtApex}`);
+  test(`reads width and depth of the ${name} body from its silhouettes to within 3 mm`, () => {
+    const { m, body } = measureBody(params);
+    assertSilhouette(m, body);
     assert.ok(Math.abs(m.bustH - body.bustHeight * 100) < 1.5, `bust height ${m.bustH}`);
-    assert.ok(m.underbustH < m.bustH);
+    assert.ok(m.underbustH < m.bustH && m.bustH - m.underbustH < 16, `underbust height ${m.underbustH}`);
   });
 }
 
@@ -56,15 +71,15 @@ test('works when the person faces left in the side photo', () => {
 });
 
 test('holds up at lower photo resolution', () => {
-  const { m, tapeAtApex, rib } = measureBody({}, { pxPerMetre: 300 });
-  assert.ok(Math.abs(m.underbustCm - rib) < 1);
-  assert.ok(Math.abs(m.bustCm - tapeAtApex) < 1);
+  const { m, body } = measureBody({}, { pxPerMetre: 300 });
+  assertSilhouette(m, body, 0.5);
 });
 
 test('a wrong height scales every measurement', () => {
   // 5 cm too tall on 165 cm is 3% too big: the reason the height must be accurate.
-  const { m, rib } = measureBody({}, { statureError: 5 });
-  assert.ok(Math.abs(m.underbustCm / rib - 170 / 165) < 0.005);
+  const exact = measureBody().m;
+  const { m } = measureBody({}, { statureError: 5 });
+  assert.ok(Math.abs(m.underbustCm / exact.underbustCm - 170 / 165) < 0.005);
 });
 
 test('finds sub-pixel edges', () => {
@@ -72,4 +87,15 @@ test('finds sub-pixel edges', () => {
   const [[a, b]] = rowRuns(row, row.length, 0);
   assert.ok(Math.abs(a - 2.83) < 0.01, `left ${a}`);
   assert.ok(Math.abs(b - 5.83) < 0.01, `right ${b}`);
+});
+
+test('circumference model matches tape measurements of real women (ANSUR II sample)', () => {
+  const sample = JSON.parse(readFileSync(new URL('./fixtures/ansur-sample.json', import.meta.url)));
+  for (const [section, factor, maxMeanError] of [['bust', CIRCUMFERENCE_MODEL.bust, 2.0], ['waist', CIRCUMFERENCE_MODEL.underbust, 1.6]]) {
+    const errors = sample[section].map(([w, d, tape]) => tapeCircumference(w, d, factor) - tape);
+    const bias = errors.reduce((a, e) => a + e, 0) / errors.length;
+    const meanAbs = errors.reduce((a, e) => a + Math.abs(e), 0) / errors.length;
+    assert.ok(Math.abs(bias) < 0.5, `${section} bias ${bias}`);
+    assert.ok(meanAbs < maxMeanError, `${section} mean error ${meanAbs}`);
+  }
 });

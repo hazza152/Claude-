@@ -32,27 +32,43 @@ on a phone. Photo upload works anywhere.
 5. **Sizing** (`js/sizing.js`): the modern UK method (band = underbust to the nearest even
    inch, one cup per inch), with US and EU conversions and sister sizes.
 
-The tests render synthetic bodies into soft-edged silhouettes and run the same measuring
-steps on them. On these bodies the results are within 1 cm of the true tape measurement,
-across bust sizes, at low resolution, and with either facing direction.
+## Calibration
+
+The step from silhouette width and depth to a tape circumference is calibrated on real
+women. **ANSUR II** (US Army anthropometric survey, 2012; public domain) measured 1,986
+women with both a tape and calipers at the same levels. Run
+`python3 calibration/fit_ansur.py` to refit; it prints the constants for
+`CIRCUMFERENCE_MODEL` in `js/measure.js`.
+
+| | Plain ellipse | Calibrated (cross-validated) |
+|---|---|---|
+| Bust | 13.5 cm too small on average | no bias, typical error 1.7 cm |
+| Underbust (waist used as stand-in) | 4.9 cm too small | no bias, typical error 1.4 cm |
+
+Real torso cross-sections are much boxier than ellipses, especially at the bust, where the
+tape runs nearly straight across the front.
+
+## Testing
+
+- **Synthetic bodies** are rendered into soft-edged silhouettes and run through the same
+  measuring steps. Width and depth come out within 3 mm, across bust sizes, at low
+  resolution and with either facing direction.
+- **A 400-woman ANSUR II sample** (`test/fixtures`) checks the circumference model.
 
 ## Accuracy: what still needs real data
 
-The geometry is tested; how it maps onto real bodies is not yet. In order of impact:
+In order of impact:
 
-1. **Calibration against real fittings.** These numbers are all starting guesses and need
-   fitting against professional tape measurements and "did this size fit?" feedback:
-   - `bustShape` and `underbustShape` in `measure.js`. The default bust factor comes from
-     modelled busts, not real ones.
-   - `DEFAULT_CALIBRATION` in `sizing.js`: the snug-tape and clothing offsets.
-2. **Height accuracy.** Every 1 cm of height error is about 0.6% on every measurement.
-3. **Clothing.** Padded bras and loose tops make the outline wrong; the app says so but
-   can't detect it.
-4. **The shape advice thresholds** in `app.js` are placeholders.
-
-Once calibrated, front + side + height methods typically reach 1–2 cm on chest
-circumferences. That is roughly one cup size, comparable to differences between human
-fitters.
+1. **Photo-to-caliper agreement.** The model assumes the photo outlines give the same width
+   and depth as calipers. Segmentation edges, clothing and posture will add some error.
+   Checking needs a set of photos paired with tape measurements; 30–50 people is enough
+   to correct any bias.
+2. **Underbust.** ANSUR II has no underbust measurement, so the waist stands in for it.
+3. **Band fit offsets** (`DEFAULT_CALIBRATION` in `sizing.js`): how much snugger a fitter's
+   band is than a relaxed tape. This is a starting guess; "did this size fit?" feedback
+   will tune it.
+4. **Height accuracy.** Every 1 cm of height error is about 0.6% on every measurement.
+5. **The shape advice thresholds** in `app.js` are placeholders.
 
 ## Privacy
 
