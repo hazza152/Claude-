@@ -8,12 +8,12 @@ const VIEWS = {
   front: {
     step: 'Photo 1 of 2',
     title: 'Front photo',
-    hint: 'Face the camera with your feet together and your hands on your hips.',
+    hint: 'Face the camera. Hands on hips works best.',
   },
   side: {
     step: 'Photo 2 of 2',
     title: 'Side photo',
-    hint: 'Turn sideways with your arms relaxed by your sides. Stand naturally.',
+    hint: 'Turn sideways and stand naturally.',
   },
 };
 
@@ -213,7 +213,12 @@ async function check(image) {
     const analysed = await analysePhoto(image, state.view, state.statureCm);
     state.pending = analysed;
     drawPreview(analysed);
-    message('capture-status', 'Check the outline follows your body, then use this photo.');
+    message(
+      'capture-status',
+      analysed.tips.length
+        ? `Got it. For a more accurate result next time: ${analysed.tips.map((t) => t.text).join(' ')}`
+        : 'Looks good.',
+    );
     $('accept').hidden = false;
   } catch (error) {
     drawPlain(image);
@@ -275,16 +280,10 @@ function showResult() {
       facing: side.facing,
       shoulderH: front.shoulderH,
       hipH: front.hipH,
+      statureCm: state.statureCm,
     });
   } catch (error) {
     if (!(error instanceof MeasureError)) console.error(error);
-    if (error.kind === 'arms') {
-      // Only the front photo needs redoing; keep the side one.
-      delete state.photos.front;
-      openCapture('front');
-      message('capture-error', error.message);
-      return;
-    }
     state.photos = {};
     openCapture('front');
     message('capture-error', `${error instanceof MeasureError ? error.message : 'Something went wrong.'} Please retake both photos.`);
@@ -312,12 +311,32 @@ function showResult() {
     dd.textContent = `${cm.toFixed(1)} cm (${(cm / 2.54).toFixed(1)} in)`;
     dl.append(dt, dd);
   }
-  $('method-note').hidden = measurement.method === 'fold';
+  showAccuracy(front, side, measurement);
   $('shape').textContent = shapeAdvice(rec);
 
   drawThumb($('thumb-front'), front, measurement);
   drawThumb($('thumb-side'), side, measurement);
   show('result');
+}
+
+/** Good / Fair / Rough, from everything that made this result less certain, plus tips. */
+function showAccuracy(front, side, m) {
+  const tips = [...front.tips, ...side.tips];
+  if (m.bust.widthSource === 'estimated' || m.underbust.widthSource === 'estimated') {
+    tips.push({ severity: 1, text: 'Put your hands on your hips in the front photo so the sides of your chest can be seen.' });
+  }
+  if (m.method !== 'fold') {
+    tips.push({ severity: 1, text: "Wear an unpadded bra or fitted top so the line under your bust shows in the side photo." });
+  }
+  const worst = Math.max(0, ...tips.map((t) => t.severity));
+  $('accuracy-level').textContent = ['Good', 'Fair', 'Rough estimate'][worst];
+  const list = $('accuracy-tips');
+  list.replaceChildren(...[...new Set(tips.map((t) => t.text))].map((text) => {
+    const li = document.createElement('li');
+    li.textContent = text;
+    return li;
+  }));
+  $('accuracy-intro').hidden = tips.length === 0;
 }
 
 function drawThumb(canvas, analysed, m) {

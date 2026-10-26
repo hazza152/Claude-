@@ -100,7 +100,7 @@ test('circumference model matches tape measurements of real women (ANSUR II samp
   }
 });
 
-test('arms touching the body only matter at the bust and underbust', () => {
+test('falls back gracefully when arms hide the sides of the chest', () => {
   const body = makeBody();
   const statureCm = body.stature * 100;
   const views = {};
@@ -118,8 +118,20 @@ test('arms touching the body only matter at the bust and underbust', () => {
     hipH: heightAt(r.hipY, { figure, statureCm }),
   });
   const bustH = body.bustHeight * 100;
+  const clear = measureTorso(input(() => false));
   // Hands on hips: arms touch around the waist, well below the underbust.
-  assert.doesNotThrow(() => measureTorso(input((h) => h < bustH - 25)));
-  // Arms down by the sides: touching at bust level.
-  assert.throws(() => measureTorso(input((h) => Math.abs(h - bustH) < 5)), (e) => e.kind === 'arms');
+  const handsOnHips = measureTorso(input((h) => h < bustH - 25));
+  assert.equal(handsOnHips.bust.widthSource, 'measured');
+  assert.equal(handsOnHips.underbust.widthSource, 'measured');
+  // Arms touching just at the bust: the width comes from a clear row close by.
+  const nearby = measureTorso(input((h) => Math.abs(h - bustH) < 1));
+  assert.equal(nearby.bust.widthSource, 'nearby');
+  assert.ok(Math.abs(nearby.bustCm - clear.bustCm) < 1);
+  // Arms down by the sides: the width is predicted from depth and height instead.
+  const armsDown = measureTorso({ ...input((h) => h > bustH - 30), statureCm });
+  assert.equal(armsDown.bust.widthSource, 'estimated');
+  assert.equal(armsDown.underbust.widthSource, 'estimated');
+  assert.ok(Number.isFinite(armsDown.bustCm) && Number.isFinite(armsDown.underbustCm));
+  // Without a height to predict from, it says what's wrong.
+  assert.throws(() => measureTorso(input((h) => h > bustH - 30)), (e) => e.kind === 'arms');
 });

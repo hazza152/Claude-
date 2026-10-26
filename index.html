@@ -38,13 +38,12 @@
         <small>Measured accurately: every centimetre out changes your results by about 0.6%.</small>
       </label>
 
-      <ol class="steps">
-        <li><strong>Wear an unpadded, unlined bra or a thin fitted top.</strong> Padding and loose tops throw off the measurement.</li>
-        <li><strong>Tie long hair up and take your shoes off.</strong></li>
-        <li><strong>Prop your phone upright at chest height, about 2 m away</strong>, so you're in the photo from the top of your head to at least your knees (head to feet is slightly more accurate). A plain wall behind you helps.</li>
-        <li><strong>Front photo:</strong> face the camera, feet together, hands on your hips. There just needs to be a gap between your arms and your chest.</li>
-        <li><strong>Side photo:</strong> turn sideways, arms relaxed by your sides. Stand naturally and breathe normally.</li>
-      </ol>
+      <p>Then take a photo from the front and one from the side. Any photo works; these make it more accurate:</p>
+      <ul class="steps">
+        <li>A fitted top or unpadded bra.</li>
+        <li>As much of you in the photo as possible, ideally head to knees or feet.</li>
+        <li>Front photo: hands on hips. Side photo: turned fully sideways.</li>
+      </ul>
       <p id="setup-error" class="error" hidden></p>
       <button id="start" class="primary">Continue</button>
     </section>
@@ -82,6 +81,12 @@
       <div class="size" id="size-uk"></div>
       <p class="size-alt" id="size-alt"></p>
 
+      <div class="card">
+        <h2>Accuracy: <span id="accuracy-level"></span></h2>
+        <p class="muted" id="accuracy-intro">To make it more accurate:</p>
+        <ul id="accuracy-tips"></ul>
+      </div>
+
       <div class="card" id="sisters-card">
         <h2>Also try</h2>
         <p class="sisters" id="sisters"></p>
@@ -91,7 +96,6 @@
       <div class="card">
         <h2>Measurements</h2>
         <dl id="measurements"></dl>
-        <p class="muted" id="method-note" hidden>We couldn't see a clear line under your bust, so the underbust is less certain. A retake in an unpadded bra may help.</p>
       </div>
 
       <div class="card">

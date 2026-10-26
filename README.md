@@ -17,14 +17,14 @@ on a phone. Photo upload works anywhere.
 
 ## How it works
 
-1. **Pose check** (MediaPipe Pose Landmarker): one person, head to at least knees in frame, upright,
-   facing the camera or fully side-on. In the front photo the arms must be clear of the body
-   at the bust and underbust lines (hands on hips does this).
-2. **Scale:** the figure is segmented to find the top of the head and, if they're in the
-   photo, the soles of the feet. Your real height turns pixels into centimetres. If the
-   photo stops at the knees, the floor is placed from the knees instead: in ANSUR II women
-   the knee sits 72.5% of the way down from the head, varying by about 1.2% between people
-   (photos cropped at the hips would vary by 3%, so they aren't accepted).
+1. **Pose** (MediaPipe Pose Landmarker): finds the person (the biggest one, if there are
+   several). Photos are never rejected for pose or framing; anything that lowers accuracy
+   becomes a tip, and the result shows an accuracy rating (Good / Fair / Rough estimate).
+2. **Scale:** your height is the ruler. The app uses the longest span in the photo: from the
+   top of the head (or the eyes, or the shoulders) down to the feet (or knees, or hips). Each
+   span's share of height comes from ANSUR II women; how much it varies between people
+   sets the accuracy, from about 0.3% (head to feet) through 1.2% (head to knees) to about
+   3% (head to hips).
 3. **Torso outline** (MediaPipe selfie multiclass segmenter): the torso is cropped tightly
    before segmenting, because the model works at 256×256 and a tight crop gives several
    times more detail. Hair is excluded. Edges are found to sub-pixel accuracy.
@@ -33,6 +33,8 @@ on a phone. Photo upload works anywhere.
    - The bust is where the profile sticks out furthest.
    - The underbust is the fold below it, where the profile stops receding.
    - At each line, width and depth become a circumference: an ellipse with a shape factor.
+   - Where arms hide the sides of the chest, the width comes from a clear row close by, or
+     is predicted from depth and height (bust typically within 2.1 cm instead of 1.7 cm).
 5. **Sizing** (`js/sizing.js`): the modern UK method (band = underbust to the nearest even
    inch, one cup per inch), with US and EU conversions and sister sizes.
 

@@ -129,6 +129,16 @@ export const CIRCUMFERENCE_MODEL = {
   underbust: { base: 1.061, perDepthRatio: 0 },
 };
 
+/**
+ * Chest width predicted from bust depth and height, for when the arms hide the sides of the
+ * chest. Fitted to ANSUR II women: typically within 1.1 cm, which makes the bust
+ * circumference typically within 2.1 cm instead of 1.7 cm. Also used for the underbust,
+ * where ribcage width is close to chest width at the bust.
+ */
+export function predictedChestWidth(bustDepthCm, statureCm) {
+  return 6.95 + 0.4172 * bustDepthCm + 0.0593 * statureCm;
+}
+
 export function tapeCircumference(width, depth, factor) {
   return (factor.base + (factor.perDepthRatio * depth) / width) * ellipsePerimeter(width / 2, depth / 2);
 }
@@ -140,6 +150,7 @@ export function tapeCircumference(width, depth, factor) {
  * @param {1|-1} input.facing  +1 if the person faces right in the side photo, -1 if left
  * @param {number} input.shoulderH  shoulder height above the floor (cm)
  * @param {number} input.hipH       hip height above the floor (cm)
+ * @param {number} [input.statureCm] standing height, to estimate chest width if arms hide it
  */
 export function measureTorso(input, options = {}) {
   const o = { ...DEFAULT_OPTIONS, ...options };
@@ -184,24 +195,33 @@ export function measureTorso(input, options = {}) {
   }
   if (underbust === null) throw new MeasureError('bust', 'Could not find the underbust line.');
 
-  // The front photo's width is only trustworthy where the arms are clear of the body.
-  for (const i of [bust, underbust]) {
-    if (front.some((r) => r.armTouching && Math.abs(r.h - heights[i]) <= 1.5)) {
-      throw new MeasureError(
-        'arms',
-        'Your arms were touching your sides at chest level in the front photo. Put your hands on your hips so there is a gap, and retake it.',
-      );
+  // The front photo's width is only trustworthy where the arms are clear of the body. Where
+  // they aren't, use a clear row close by, or failing that predict the width.
+  const armAt = (h) => front.some((r) => r.armTouching && Math.abs(r.h - h) <= 1.5);
+  const widthFor = (i, searchCm) => {
+    if (!armAt(heights[i])) return { width: width[i], source: 'measured' };
+    let best = null;
+    heights.forEach((h, j) => {
+      const gap = Math.abs(h - heights[i]);
+      if (gap <= searchCm && !armAt(h) && (best === null || gap < Math.abs(heights[best] - heights[i]))) best = j;
+    });
+    if (best !== null) return { width: width[best], source: 'nearby' };
+    if (!input.statureCm) {
+      throw new MeasureError('arms', 'Your arms were covering the sides of your chest in the front photo.');
     }
-  }
+    return { width: predictedChestWidth(depth[bust], input.statureCm), source: 'estimated' };
+  };
+  const bustWidth = widthFor(bust, 3);
+  const underbustWidth = widthFor(underbust, 5);
 
   return {
-    underbustCm: tapeCircumference(width[underbust], depth[underbust], model.underbust),
-    bustCm: tapeCircumference(width[bust], depth[bust], model.bust),
+    underbustCm: tapeCircumference(underbustWidth.width, depth[underbust], model.underbust),
+    bustCm: tapeCircumference(bustWidth.width, depth[bust], model.bust),
     projectionCm: anterior[bust] - anterior[underbust],
     underbustH: heights[underbust],
     bustH: heights[bust],
-    underbust: { width: width[underbust], depth: depth[underbust] },
-    bust: { width: width[bust], depth: depth[bust] },
+    underbust: { width: underbustWidth.width, widthSource: underbustWidth.source, depth: depth[underbust] },
+    bust: { width: bustWidth.width, widthSource: bustWidth.source, depth: depth[bust] },
     method,
   };
 }
