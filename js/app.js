@@ -1,6 +1,6 @@
-import { analysePhoto, loadModels, PhotoProblem } from './vision.js?v=9';
-import { measureTorso, MeasureError } from './measure.js?v=9';
-import { recommend } from './sizing.js?v=9';
+import { analysePhoto, loadModels, PhotoProblem } from './vision.js?v=10';
+import { measureTorso, MeasureError } from './measure.js?v=10';
+import { recommend } from './sizing.js?v=10';
 
 const $ = (id) => document.getElementById(id);
 
@@ -320,7 +320,12 @@ function showResult() {
     dd.textContent = `${cm.toFixed(1)} cm (${(cm / 2.54).toFixed(1)} in)`;
     dl.append(dt, dd);
   }
-  showAccuracy(front, side, measurement);
+  const assessment = assess(front, side, measurement);
+  showAccuracy(assessment);
+  const unreliable = assessment.score >= 3;
+  $('unreliable').hidden = !unreliable;
+  $('result-details').hidden = unreliable;
+  $('unreliable-reasons').replaceChildren(...assessment.tips.map(listItem));
   $('shape').textContent = shapeAdvice(rec);
 
   drawThumb($('thumb-front'), front, measurement);
@@ -328,24 +333,39 @@ function showResult() {
   show('result');
 }
 
-/** Good / Fair / Rough, from everything that made this result less certain, plus tips. */
-function showAccuracy(front, side, m) {
-  const tips = [...front.tips, ...side.tips];
+/**
+ * Rates how far to trust this result from everything that made it less certain. Each issue
+ * scores 1 (slightly less accurate) or 2 (rough); a scale mismatch between the photos
+ * scores 3. 0 is Good, 1 Fair, 2 Rough; 3 or more is too unreliable to show by default.
+ */
+function assess(front, side, m) {
+  const issues = [...front.tips, ...side.tips];
   if (m.bust.widthSource === 'estimated' || m.underbust.widthSource === 'estimated') {
-    tips.push({ severity: 1, text: 'Put your hands on your hips in the front photo so the sides of your chest can be seen.' });
+    issues.push({ severity: 1, text: 'Put your hands on your hips in the front photo so the sides of your chest can be seen.' });
   }
   if (m.method !== 'fold') {
-    tips.push({ severity: 1, text: "Wear an unpadded bra or fitted top so the line under your bust shows in the side photo." });
+    issues.push({ severity: 1, text: 'Wear an unpadded bra or fitted top so the line under your bust shows in the side photo.' });
   }
-  const worst = Math.max(0, ...tips.map((t) => t.severity));
-  $('accuracy-level').textContent = ['Good', 'Fair', 'Rough estimate'][worst];
-  const list = $('accuracy-tips');
-  list.replaceChildren(...[...new Set(tips.map((t) => t.text))].map((text) => {
-    const li = document.createElement('li');
-    li.textContent = text;
-    return li;
-  }));
-  $('accuracy-intro').hidden = tips.length === 0;
+  // The torso is the same length in both photos, so a big difference means they were taken
+  // from different distances or zooms (e.g. screenshots from a video).
+  const ratio = (front.shoulderH - front.hipH) / (side.shoulderH - side.hipH);
+  if (Math.abs(ratio - 1) > 0.1) {
+    issues.push({ severity: 3, text: "The two photos don't match in scale. Take both from the same spot, at the same zoom." });
+  }
+  const score = issues.reduce((sum, i) => sum + i.severity, 0);
+  return { score, tips: [...new Set(issues.map((i) => i.text))] };
+}
+
+function showAccuracy(assessment) {
+  $('accuracy-level').textContent = ['Good', 'Fair', 'Rough estimate'][Math.min(2, assessment.score)];
+  $('accuracy-tips').replaceChildren(...assessment.tips.map(listItem));
+  $('accuracy-intro').hidden = assessment.tips.length === 0;
+}
+
+function listItem(text) {
+  const li = document.createElement('li');
+  li.textContent = text;
+  return li;
 }
 
 function drawThumb(canvas, analysed, m) {
@@ -386,6 +406,16 @@ function shapeAdvice(rec) {
   }
   return 'Your bust has an even shape. Most cup styles should work; balconettes and plunges are good places to start.';
 }
+
+$('show-anyway').addEventListener('click', () => {
+  $('unreliable').hidden = true;
+  $('result-details').hidden = false;
+});
+
+$('retake-all').addEventListener('click', () => {
+  state.photos = {};
+  openCapture('front');
+});
 
 $('again').addEventListener('click', () => {
   state.photos = {};

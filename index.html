@@ -5,11 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>BraFit</title>
   <meta name="description" content="Find your bra size from two photos. Everything stays on your phone.">
-  <link rel="stylesheet" href="css/app.css?v=9">
+  <link rel="stylesheet" href="css/app.css?v=10">
   <script type="importmap">
     { "imports": { "@mediapipe/tasks-vision": "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/vision_bundle.mjs" } }
   </script>
-  <script type="module" src="js/app.js?v=9"></script>
+  <script type="module" src="js/app.js?v=10"></script>
 </head>
 <body>
   <main>
@@ -77,6 +77,17 @@
 
     <!-- Result -->
     <section id="result" class="screen" hidden>
+      <div id="unreliable" hidden>
+        <h1>We can't give a reliable size from these photos</h1>
+        <p>A size from them could be several sizes out. To fix it:</p>
+        <ul id="unreliable-reasons"></ul>
+        <div class="actions">
+          <button id="retake-all" class="primary">Retake photos</button>
+          <button id="show-anyway">Show my rough estimate anyway</button>
+        </div>
+      </div>
+
+      <div id="result-details">
       <p class="step-label">Your starting size</p>
       <div class="size" id="size-uk"></div>
       <p class="size-alt" id="size-alt"></p>
@@ -120,6 +131,7 @@
       </div>
 
       <p class="muted">Sizes vary between brands, so treat this as a starting point. Nothing has been saved.</p>
+      </div>
       <button id="again" class="primary">Start again</button>
     </section>
 

@@ -1,7 +1,7 @@
 // Runs the on-device vision models on a photo and prepares the silhouette for measuring.
 // Photos never leave the browser: the models are downloaded once and run locally.
 
-import { figureExtent, heightAt, toCentimetres, torsoRows } from './measure.js?v=9';
+import { figureExtent, heightAt, toCentimetres, torsoRows } from './measure.js?v=10';
 
 const WASM = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm';
 const POSE_MODEL =

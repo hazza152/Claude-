@@ -135,3 +135,32 @@ test('falls back gracefully when arms hide the sides of the chest', () => {
   // Without a height to predict from, it says what's wrong.
   assert.throws(() => measureTorso(input((h) => h > bustH - 30)), (e) => e.kind === 'arms');
 });
+
+test('a bump halfway down the breast is not mistaken for the fold', () => {
+  const body = makeBody();
+  const statureCm = body.stature * 100;
+  const views = {};
+  for (const view of ['front', 'side']) {
+    const r = renderView(body, view, { pxPerMetre: 900 });
+    const figure = figureExtent(r.mask);
+    views[view] = { r, figure, rows: toCentimetres(torsoRows(r.mask, r.centerX), { figure, centerX: r.centerX, statureCm }) };
+  }
+  const bustH = body.bustHeight * 100;
+  // Flatten the profile for 2.5 cm partway down the underside of the breast, like blur can.
+  // The real fold is lower, where the profile reaches the ribs.
+  const nearest = (h) => views.side.rows.reduce((a, b) => (Math.abs(b.h - h) < Math.abs(a.h - h) ? b : a));
+  const plateauTop = nearest(bustH - 4.5).right;
+  const side = views.side.rows.map((row) =>
+    row.h < bustH - 4.5 && row.h > bustH - 7 ? { ...row, right: plateauTop } : row,
+  );
+  const { r, figure } = views.front;
+  const m = measureTorso({
+    front: views.front.rows,
+    side,
+    facing: 1,
+    shoulderH: heightAt(r.shoulderY, { figure, statureCm }),
+    hipH: heightAt(r.hipY, { figure, statureCm }),
+  });
+  // The breast in this body ends 7.5 cm below the apex.
+  assert.ok(bustH - m.underbustH > 7, `underbust ${(bustH - m.underbustH).toFixed(1)} cm below apex`);
+});

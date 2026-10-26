@@ -233,16 +233,36 @@ export class MeasureError extends Error {
   }
 }
 
-/** Walk down from the apex until the front of the body stops receding quickly. */
+/**
+ * The fold under the bust. Walking down from the apex, it's where the front of the body
+ * stops receding and stays that way for at least 2 cm. As a check against blur or a bumpy
+ * outline faking a stop halfway down the breast, the fold must also be close to the most
+ * receded point below the bust; if it isn't, that point is used instead.
+ */
 function foldIndex(bust, heights, anterior, o) {
-  const lowest = heights[bust] - o.maxFoldDropCm;
-  let leftBreast = false;
-  for (let i = bust; i > 0 && heights[i - 1] >= lowest; i--) {
-    const slope = (anterior[i] - anterior[i - 1]) / (heights[i] - heights[i - 1]);
-    if (slope > o.foldSlope) leftBreast = true;
-    else if (leftBreast) return i - 1;
+  const below = (i) => heights[bust] - heights[i];
+  let deepest = null;
+  for (let i = bust; i >= 0 && below(i) <= o.maxFoldDropCm; i--) {
+    if (deepest === null || anterior[i] < anterior[deepest]) deepest = i;
   }
-  return null;
+  const drop = deepest === null ? 0 : anterior[bust] - anterior[deepest];
+  // Less than 1 cm of bust in front of the ribs: no clear fold to find.
+  if (drop < 1) return null;
+  const nearDeepest = (i) => anterior[i] <= anterior[deepest] + Math.max(0.5, 0.25 * drop);
+
+  const span = Math.round(2 / o.stepCm);
+  let leftBreast = false;
+  for (let i = bust; i - span >= 0 && below(i - span) <= o.maxFoldDropCm; i--) {
+    const slope = (anterior[i] - anterior[i - 1]) / (heights[i] - heights[i - 1]);
+    if (slope > o.foldSlope) {
+      leftBreast = true;
+      continue;
+    }
+    const staysFlat = (anterior[i] - anterior[i - span]) / (heights[i] - heights[i - span]) <= o.foldSlope;
+    if (leftBreast && staysFlat && nearDeepest(i)) return i;
+  }
+  for (let i = bust; i >= deepest; i--) if (nearDeepest(i)) return i;
+  return deepest;
 }
 
 /** Linear interpolation of value(row) over rows' heights. NaN outside the covered range. */
