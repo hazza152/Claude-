@@ -17,10 +17,13 @@ on a phone. Photo upload works anywhere.
 
 ## How it works
 
-1. **Pose check** (MediaPipe Pose Landmarker): one person, whole body in frame, upright,
+1. **Pose check** (MediaPipe Pose Landmarker): one person, head to at least knees in frame, upright,
    facing the camera or fully side-on, and arms clear of the body in the front photo.
-2. **Scale:** the whole figure is segmented to find the top of the head and the soles of the
-   feet. Your real height turns pixels into centimetres.
+2. **Scale:** the figure is segmented to find the top of the head and, if they're in the
+   photo, the soles of the feet. Your real height turns pixels into centimetres. If the
+   photo stops at the knees, the floor is placed from the knees instead: in ANSUR II women
+   the knee sits 72.5% of the way down from the head, varying by about 1.2% between people
+   (photos cropped at the hips would vary by 3%, so they aren't accepted).
 3. **Torso outline** (MediaPipe selfie multiclass segmenter): the torso is cropped tightly
    before segmenting, because the model works at 256×256 and a tight crop gives several
    times more detail. Hair is excluded. Edges are found to sub-pixel accuracy.

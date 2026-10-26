@@ -20,10 +20,14 @@ const L_WRIST = 15;
 const R_WRIST = 16;
 const L_HIP = 23;
 const R_HIP = 24;
+const L_KNEE = 25;
+const R_KNEE = 26;
 const L_ANKLE = 27;
 const R_ANKLE = 28;
 
 const MAX_PHOTO_SIDE = 2400;
+// Top of head to knee (pose landmark, the joint centre) as a fraction of standing height.
+const HEAD_TO_KNEE = 0.725;
 
 let models;
 
@@ -66,39 +70,47 @@ export async function analysePhoto(source, view, statureCm) {
   if (detected.length === 0) throw new PhotoProblem("Couldn't find a person in the photo.");
   if (detected.length > 1) throw new PhotoProblem('Only one person should be in the photo.');
   const lm = detected[0].map((p) => ({ x: p.x * W, y: p.y * H, visibility: p.visibility ?? 1 }));
-  for (const i of [NOSE, L_SHOULDER, R_SHOULDER, L_HIP, R_HIP, L_ANKLE, R_ANKLE]) {
-    if (lm[i].y < 0 || lm[i].y > H || lm[i].x < 0 || lm[i].x > W) {
-      throw new PhotoProblem('Your whole body, head to feet, needs to be in the photo. Move the phone further away.');
-    }
+  const inFrame = (p) => p.x >= 0 && p.x <= W && p.y >= 0 && p.y <= H;
+  if (![NOSE, L_SHOULDER, R_SHOULDER, L_HIP, R_HIP, L_KNEE, R_KNEE].every((i) => inFrame(lm[i]))) {
+    throw new PhotoProblem('Get from the top of your head down to at least your knees in the photo. Move the phone further away.');
   }
 
   const mid = (a, b) => ({ x: (lm[a].x + lm[b].x) / 2, y: (lm[a].y + lm[b].y) / 2 });
   const shoulders = mid(L_SHOULDER, R_SHOULDER);
   const hips = mid(L_HIP, R_HIP);
-  const ankles = mid(L_ANKLE, R_ANKLE);
-  const bodyPx = ankles.y - lm[NOSE].y;
-  if (bodyPx < H * 0.4) throw new PhotoProblem("You're too far away. Fill more of the frame, head to feet.");
+  const knees = mid(L_KNEE, R_KNEE);
+  const feetInFrame = inFrame(lm[L_ANKLE]) && inFrame(lm[R_ANKLE]);
+  const lowest = feetInFrame ? mid(L_ANKLE, R_ANKLE) : knees;
+  const bodyPx = lowest.y - lm[NOSE].y;
+  const torsoPx = hips.y - shoulders.y;
+  if (torsoPx < H * 0.15) throw new PhotoProblem("You're too far away. Move closer so you fill more of the frame.");
 
   // Upright check: the line from hips to shoulders should be close to vertical.
-  const lean = Math.abs(shoulders.x - hips.x) / (hips.y - shoulders.y);
+  const lean = Math.abs(shoulders.x - hips.x) / torsoPx;
   if (lean > 0.12) throw new PhotoProblem('Stand up straight, and make sure the phone is upright, not tilted.');
 
-  const shoulderSpread = Math.hypot(lm[L_SHOULDER].x - lm[R_SHOULDER].x, lm[L_SHOULDER].y - lm[R_SHOULDER].y) / bodyPx;
-  if (view === 'front' && shoulderSpread < 0.16) throw new PhotoProblem('Face the camera straight on for the front photo.');
-  if (view === 'side' && shoulderSpread > 0.1) throw new PhotoProblem('Turn fully sideways for the side photo.');
+  const shoulderSpread = Math.hypot(lm[L_SHOULDER].x - lm[R_SHOULDER].x, lm[L_SHOULDER].y - lm[R_SHOULDER].y) / torsoPx;
+  if (view === 'front' && shoulderSpread < 0.45) throw new PhotoProblem('Face the camera straight on for the front photo.');
+  if (view === 'side' && shoulderSpread > 0.3) throw new PhotoProblem('Turn fully sideways for the side photo.');
 
-  // Height scale: segment the whole figure at the best resolution the model allows.
+  // Height scale. Segment the figure at the best resolution the model allows to find the top
+  // of the head, and the soles of the feet if they're in the photo.
   const centerX = (shoulders.x + hips.x) / 2;
-  const figureBox = squareBox(centerX, (lm[NOSE].y + ankles.y) / 2, bodyPx * 1.4);
-  const figureMask = segment(segmenter, labels, photo, figureBox, { includeHair: true });
-  const figure = figureExtent(figureMask);
-  if (!figure || figure.headTopY <= figureBox.y + 1 || figure.floorY >= figureBox.y + figureBox.size - 1) {
-    throw new PhotoProblem('Your whole body, head to feet, needs to be in the photo.');
+  // A tight crop gives the most detail; without the feet, leave more room above the head.
+  const figureBox = squareBox(centerX, (lm[NOSE].y + lowest.y) / 2, bodyPx * (feetInFrame ? 1.4 : 1.6));
+  const found = figureExtent(segment(segmenter, labels, photo, figureBox, { includeHair: true }));
+  if (!found || found.headTopY <= Math.max(0, figureBox.y) + 1) {
+    throw new PhotoProblem('The top of your head needs to be in the photo.');
   }
+  const feetFound = feetInFrame && found.floorY < Math.min(H, figureBox.y + figureBox.size) - 1;
+  // Feet out of shot: place the floor from the knees instead. In women the knee sits 72.5% of
+  // the way down from the top of the head, varying by about 1.2% (ANSUR II, 1,986 women).
+  const figure = feetFound
+    ? found
+    : { headTopY: found.headTopY, floorY: found.headTopY + (knees.y - found.headTopY) / HEAD_TO_KNEE };
 
   // Torso outline: a tight crop gives the model several times more detail. Hair is left
   // out so long hair doesn't widen the outline.
-  const torsoPx = hips.y - shoulders.y;
   const torsoBox = squareBox(centerX, (shoulders.y + hips.y) / 2, torsoPx * 1.6);
   const torsoMask = segment(segmenter, labels, photo, torsoBox, { includeHair: false });
 
