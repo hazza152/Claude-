@@ -256,6 +256,12 @@ function showResult() {
   }
 
   const rec = recommend(measurement);
+  if (!rec.size.inRange) {
+    state.photos = {};
+    openCapture('front');
+    message('capture-error', "Those measurements don't look right. Please check the setup and retake both photos.");
+    return;
+  }
   $('size-uk').textContent = rec.size.uk;
   $('size-alt').textContent = `UK · US ${rec.size.us} · EU ${rec.size.eu}`;
   $('sisters-card').hidden = rec.sisters.length === 0;
