@@ -1,8 +1,7 @@
 // Runs the on-device vision models on a photo and prepares the silhouette for measuring.
 // Photos never leave the browser: the models are downloaded once and run locally.
 
-import { FilesetResolver, ImageSegmenter, PoseLandmarker } from '@mediapipe/tasks-vision';
-import { figureExtent, heightAt, toCentimetres, torsoRows } from './measure.js?v=8';
+import { figureExtent, heightAt, toCentimetres, torsoRows } from './measure.js?v=9';
 
 const WASM = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm';
 const POSE_MODEL =
@@ -33,6 +32,8 @@ let models;
 
 export function loadModels() {
   models ??= (async () => {
+    // Loaded on demand, so the page still works if the download is slow or fails.
+    const { FilesetResolver, ImageSegmenter, PoseLandmarker } = await import('@mediapipe/tasks-vision');
     const files = await FilesetResolver.forVisionTasks(WASM);
     const [pose, segmenter] = await Promise.all([
       PoseLandmarker.createFromOptions(files, {

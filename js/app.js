@@ -1,6 +1,6 @@
-import { analysePhoto, loadModels, PhotoProblem } from './vision.js?v=8';
-import { measureTorso, MeasureError } from './measure.js?v=8';
-import { recommend } from './sizing.js?v=8';
+import { analysePhoto, loadModels, PhotoProblem } from './vision.js?v=9';
+import { measureTorso, MeasureError } from './measure.js?v=9';
+import { recommend } from './sizing.js?v=9';
 
 const $ = (id) => document.getElementById(id);
 
@@ -115,7 +115,9 @@ async function startCamera() {
   const video = $('video');
   try {
     state.stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: state.facingMode, width: { ideal: 1920 }, height: { ideal: 1920 } },
+      // The sensor's own 4:3 shape: asking for a square makes some phones crop the view.
+      // (Phones held upright rotate this to portrait.)
+      video: { facingMode: state.facingMode, width: { ideal: 1920 }, height: { ideal: 1440 }, resizeMode: { ideal: 'none' } },
       audio: false,
     });
   } catch {
@@ -128,8 +130,14 @@ async function startCamera() {
   video.style.transform = state.facingMode === 'user' ? 'scaleX(-1)' : '';
   await video.play();
   video.hidden = false;
+  fitStage(video.videoWidth, video.videoHeight);
   $('stage-placeholder').hidden = true;
   $('timer').disabled = false;
+}
+
+/** Shapes the camera/preview area like the picture, so nothing is cropped or letterboxed. */
+function fitStage(width, height) {
+  if (width && height) document.querySelector('.stage').style.aspectRatio = `${width} / ${height}`;
 }
 
 function stopCamera() {
@@ -252,6 +260,7 @@ function drawPlain(image) {
   canvas.height = image.height;
   canvas.getContext('2d').drawImage(image, 0, 0);
   canvas.hidden = false;
+  fitStage(image.width, image.height);
   $('stage-placeholder').hidden = true;
 }
 

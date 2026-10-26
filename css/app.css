@@ -67,7 +67,7 @@ input[type=number] {
 .steps li { margin-bottom: 10px; }
 
 .stage {
-  position: relative; width: 100%; aspect-ratio: 3 / 4; border-radius: 16px; overflow: hidden;
+  position: relative; width: 100%; max-height: 75vh; aspect-ratio: 3 / 4; border-radius: 16px; overflow: hidden;
   background: #000; display: grid; place-items: center;
 }
 .stage > * { grid-area: 1 / 1; }
