@@ -2,7 +2,7 @@
 // Photos never leave the browser: the models are downloaded once and run locally.
 
 import { FilesetResolver, ImageSegmenter, PoseLandmarker } from '@mediapipe/tasks-vision';
-import { figureExtent, heightAt, toCentimetres, torsoRows } from './measure.js';
+import { figureExtent, heightAt, toCentimetres, torsoRows } from './measure.js?v=8';
 
 const WASM = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm';
 const POSE_MODEL =

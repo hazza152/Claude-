@@ -1,6 +1,6 @@
-import { analysePhoto, loadModels, PhotoProblem } from './vision.js';
-import { measureTorso, MeasureError } from './measure.js';
-import { recommend } from './sizing.js';
+import { analysePhoto, loadModels, PhotoProblem } from './vision.js?v=8';
+import { measureTorso, MeasureError } from './measure.js?v=8';
+import { recommend } from './sizing.js?v=8';
 
 const $ = (id) => document.getElementById(id);
 
