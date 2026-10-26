@@ -1,0 +1,28 @@
+# Generate the Xcode project with:  brew install xcodegen && xcodegen
+name: BraScan
+options:
+  bundleIdPrefix: com.example
+  deploymentTarget:
+    iOS: "16.0"
+packages:
+  BraSizeCore:
+    path: .
+targets:
+  BraScan:
+    type: application
+    platform: iOS
+    sources: [App]
+    dependencies:
+      - package: BraSizeCore
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: BraScan
+        NSCameraUsageDescription: The camera and LiDAR sensor measure your torso. Images never leave your phone and are never saved.
+        UIRequiredDeviceCapabilities: [arkit]
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.brascan
+        TARGETED_DEVICE_FAMILY: "1"
