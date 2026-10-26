@@ -1,5 +1,6 @@
 import { analysePhoto, loadModels, PhotoProblem } from './vision.js';
 import { measureTorso, MeasureError } from './measure.js';
+import { combineViews } from './scale.js';
 import { recommend } from './sizing.js';
 
 const $ = (id) => document.getElementById(id);
@@ -73,19 +74,19 @@ $('toggle-units').addEventListener('click', () => {
   $('toggle-units').textContent = state.useFeet ? 'Use cm' : 'Use ft/in';
 });
 
+/** Height in cm; null if left blank (the paper is used for scale instead). */
 function readHeight() {
   if (state.useFeet) {
-    const ft = parseFloat($('height-ft').value);
-    const inches = parseFloat($('height-in').value || '0');
-    return Number.isFinite(ft) ? (ft * 12 + inches) * 2.54 : NaN;
+    if (!$('height-ft').value) return null;
+    return (parseFloat($('height-ft').value) * 12 + parseFloat($('height-in').value || '0')) * 2.54;
   }
-  return parseFloat($('height-cm').value);
+  return $('height-cm').value ? parseFloat($('height-cm').value) : null;
 }
 
 $('start').addEventListener('click', () => {
   const cm = readHeight();
-  if (!(cm >= 120 && cm <= 220)) {
-    message('setup-error', 'Please enter your height.');
+  if (cm !== null && !(cm >= 120 && cm <= 220)) {
+    message('setup-error', 'That height looks wrong. Check it, or leave it blank and use paper.');
     return;
   }
   message('setup-error', null);
@@ -187,7 +188,7 @@ async function check(image) {
   message('capture-error', null);
   setLoading('Checking your photo…');
   try {
-    const analysed = await analysePhoto(image, state.view, state.statureCm);
+    const analysed = await analysePhoto(image, state.view, { statureCm: state.statureCm, paper: $('paper-size').value });
     state.pending = analysed;
     drawPreview(analysed);
     message('capture-status', 'Check the outline follows your body, then use this photo.');
@@ -239,14 +240,10 @@ function drawPreview(analysed) {
 function showResult() {
   const { front, side } = state.photos;
   let measurement;
+  let combined;
   try {
-    measurement = measureTorso({
-      front: front.rows,
-      side: side.rows,
-      facing: side.facing,
-      shoulderH: front.shoulderH,
-      hipH: front.hipH,
-    });
+    combined = combineViews(front, side);
+    measurement = measureTorso(combined);
   } catch (error) {
     if (!(error instanceof MeasureError)) console.error(error);
     state.photos = {};
@@ -256,6 +253,12 @@ function showResult() {
   }
 
   const rec = recommend(measurement);
+  if (!rec.size.inRange) {
+    state.photos = {};
+    openCapture('front');
+    message('capture-error', "Those measurements don't look right. Please check the setup and retake both photos.");
+    return;
+  }
   $('size-uk').textContent = rec.size.uk;
   $('size-alt').textContent = `UK · US ${rec.size.us} · EU ${rec.size.eu}`;
   $('sisters-card').hidden = rec.sisters.length === 0;
@@ -273,16 +276,16 @@ function showResult() {
   $('method-note').hidden = measurement.method === 'fold';
   $('shape').textContent = shapeAdvice(rec);
 
-  drawThumb($('thumb-front'), front, measurement);
-  drawThumb($('thumb-side'), side, measurement);
+  drawThumb($('thumb-front'), front, measurement, (h) => combined.yAt('front', h));
+  drawThumb($('thumb-side'), side, measurement, (h) => combined.yAt('side', h));
   show('result');
 }
 
-function drawThumb(canvas, analysed, m) {
+function drawThumb(canvas, analysed, m, yAt) {
   const { photo } = analysed;
   // Crop to the torso so the lines are easy to see.
-  const top = analysed.yAt(m.bustH + 30);
-  const bottom = analysed.yAt(m.underbustH - 25);
+  const top = yAt(m.bustH + 30);
+  const bottom = yAt(m.underbustH - 25);
   const h = bottom - top;
   const w = h * 0.8;
   const x = analysed.centerX - w / 2;
@@ -293,7 +296,7 @@ function drawThumb(canvas, analysed, m) {
   ctx.drawImage(photo, x, top, w, h, 0, 0, canvas.width, canvas.height);
   const style = getComputedStyle(document.documentElement);
   for (const [hCm, color] of [[m.bustH, style.getPropertyValue('--line-bust')], [m.underbustH, style.getPropertyValue('--line-underbust')]]) {
-    const y = (analysed.yAt(hCm) - top) * k;
+    const y = (yAt(hCm) - top) * k;
     ctx.strokeStyle = color.trim();
     ctx.lineWidth = 4;
     ctx.beginPath();

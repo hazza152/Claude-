@@ -2,7 +2,9 @@
 // Photos never leave the browser: the models are downloaded once and run locally.
 
 import { FilesetResolver, ImageSegmenter, PoseLandmarker } from '@mediapipe/tasks-vision';
-import { figureExtent, heightAt, rowRuns, toCentimetres, torsoRows } from './measure.js';
+import { figureExtent, rowRuns, torsoRows } from './measure.js';
+import { findPaper } from './paper.js';
+import { assumedFocalPx } from './scale.js';
 
 const WASM = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm';
 const POSE_MODEL =
@@ -52,55 +54,57 @@ export function loadModels() {
 export class PhotoProblem extends Error {}
 
 /**
- * Finds the person, checks the photo is usable, and returns the torso outline in cm.
+ * Finds the person, checks the photo is usable, and returns the torso outline plus a scale.
+ * The scale comes from the person's height when they are fully in frame, otherwise from a
+ * sheet of paper tucked into their waistband.
  * @param {ImageBitmap|HTMLCanvasElement} source
  * @param {'front'|'side'} view
+ * @param {{statureCm?: number, paper: 'A4'|'Letter'}} options
  */
-export async function analysePhoto(source, view, statureCm) {
+export async function analysePhoto(source, view, { statureCm, paper }) {
   const { pose, segmenter, labels } = await loadModels();
   const photo = toCanvas(source);
   const W = photo.width;
   const H = photo.height;
+  const inFrame = (p) => p.x >= 0 && p.x <= W && p.y >= 0 && p.y <= H;
 
   const detected = pose.detect(photo).landmarks;
   if (detected.length === 0) throw new PhotoProblem("Couldn't find a person in the photo.");
   if (detected.length > 1) throw new PhotoProblem('Only one person should be in the photo.');
-  const lm = detected[0].map((p) => ({ x: p.x * W, y: p.y * H, visibility: p.visibility ?? 1 }));
-  for (const i of [NOSE, L_SHOULDER, R_SHOULDER, L_HIP, R_HIP, L_ANKLE, R_ANKLE]) {
-    if (lm[i].y < 0 || lm[i].y > H || lm[i].x < 0 || lm[i].x > W) {
-      throw new PhotoProblem('Your whole body, head to feet, needs to be in the photo. Move the phone further away.');
-    }
+  const lm = detected[0].map((p) => ({ x: p.x * W, y: p.y * H }));
+  if (![NOSE, L_SHOULDER, R_SHOULDER, L_HIP, R_HIP].every((i) => inFrame(lm[i]))) {
+    throw new PhotoProblem('Your head and body down to your hips need to be in the photo.');
   }
 
   const mid = (a, b) => ({ x: (lm[a].x + lm[b].x) / 2, y: (lm[a].y + lm[b].y) / 2 });
   const shoulders = mid(L_SHOULDER, R_SHOULDER);
   const hips = mid(L_HIP, R_HIP);
-  const ankles = mid(L_ANKLE, R_ANKLE);
-  const bodyPx = ankles.y - lm[NOSE].y;
-  if (bodyPx < H * 0.4) throw new PhotoProblem("You're too far away. Fill more of the frame, head to feet.");
+  const torsoPx = hips.y - shoulders.y;
+  if (torsoPx < H * 0.15) throw new PhotoProblem("You're too far away. Move closer so you fill more of the frame.");
 
   // Upright check: the line from hips to shoulders should be close to vertical.
-  const lean = Math.abs(shoulders.x - hips.x) / (hips.y - shoulders.y);
+  const lean = Math.abs(shoulders.x - hips.x) / torsoPx;
   if (lean > 0.12) throw new PhotoProblem('Stand up straight, and make sure the phone is upright, not tilted.');
 
-  const shoulderSpread = Math.hypot(lm[L_SHOULDER].x - lm[R_SHOULDER].x, lm[L_SHOULDER].y - lm[R_SHOULDER].y) / bodyPx;
-  if (view === 'front' && shoulderSpread < 0.16) throw new PhotoProblem('Face the camera straight on for the front photo.');
-  if (view === 'side' && shoulderSpread > 0.1) throw new PhotoProblem('Turn fully sideways for the side photo.');
+  const shoulderSpread = Math.hypot(lm[L_SHOULDER].x - lm[R_SHOULDER].x, lm[L_SHOULDER].y - lm[R_SHOULDER].y) / torsoPx;
+  if (view === 'front' && shoulderSpread < 0.45) throw new PhotoProblem('Face the camera straight on for the front photo.');
+  if (view === 'side' && shoulderSpread > 0.3) throw new PhotoProblem('Turn fully sideways for the side photo.');
 
-  // Height scale: segment the whole figure at the best resolution the model allows.
   const centerX = (shoulders.x + hips.x) / 2;
-  const figureBox = squareBox(centerX, (lm[NOSE].y + ankles.y) / 2, bodyPx * 1.4);
-  const figureMask = segment(segmenter, labels, photo, figureBox, { includeHair: true });
-  const figure = figureExtent(figureMask);
-  if (!figure || figure.headTopY <= figureBox.y + 1 || figure.floorY >= figureBox.y + figureBox.size - 1) {
-    throw new PhotoProblem('Your whole body, head to feet, needs to be in the photo.');
+  const scale = (statureCm && heightScale()) || paperScale();
+  if (!scale) {
+    throw new PhotoProblem(
+      view === 'front'
+        ? `Couldn't see the folded ${paper} sheet. Tuck it into your waistband, landscape, flat against your stomach, or get your whole body in the photo.`
+        : `Couldn't see the folded ${paper} sheet. Move it to your side, landscape and flat against your hip, facing the camera.`,
+    );
   }
 
   // Torso outline: a tight crop gives the model several times more detail. Hair is left
   // out so long hair doesn't widen the outline.
-  const torsoPx = hips.y - shoulders.y;
   const torsoBox = squareBox(centerX, (shoulders.y + hips.y) / 2, torsoPx * 1.6);
   const torsoMask = segment(segmenter, labels, photo, torsoBox, { includeHair: false });
+  if (scale.paperBox && view === 'front') fillBox(torsoMask, scale.paperBox);
 
   if (view === 'front') {
     // The arms must be clear of the body or the chest looks wider than it is: no elbow or
@@ -118,23 +122,52 @@ export async function analysePhoto(source, view, statureCm) {
     }
   }
 
-  const scale = { figure, statureCm };
-  const outline = torsoRows(torsoMask, centerX);
+  const { paperBox, ...publicScale } = scale;
   return {
     view,
     photo,
-    figure,
     centerX,
-    rows: toCentimetres(outline, { figure, centerX, statureCm }),
-    /** Torso edges in image pixels, for drawing. */
-    outline,
-    shoulderH: heightAt(shoulders.y, scale),
-    hipH: heightAt(hips.y, scale),
+    /** Torso edges in image pixels. */
+    outline: torsoRows(torsoMask, centerX),
+    shoulderY: shoulders.y,
+    hipY: hips.y,
     // In a side photo the face points forward.
     facing: lm[NOSE].x >= centerX ? 1 : -1,
-    /** Image y for a height above the floor, for drawing the measured lines. */
-    yAt: (hCm) => figure.floorY - (hCm * (figure.floorY - figure.headTopY)) / statureCm,
+    scale: publicScale,
   };
+
+  /** Scale from the person's height, if they are fully in frame. */
+  function heightScale() {
+    const ankles = mid(L_ANKLE, R_ANKLE);
+    if (!inFrame(lm[L_ANKLE]) || !inFrame(lm[R_ANKLE])) return null;
+    const bodyPx = ankles.y - lm[NOSE].y;
+    const box = squareBox(centerX, (lm[NOSE].y + ankles.y) / 2, bodyPx * 1.4);
+    const figure = figureExtent(segment(segmenter, labels, photo, box, { includeHair: true }));
+    if (!figure || figure.headTopY <= Math.max(0, box.y) + 1 || figure.floorY >= Math.min(H, box.y + box.size) - 1) {
+      return null;
+    }
+    return { mode: 'height', cmPerPx: statureCm / (figure.floorY - figure.headTopY), floorY: figure.floorY };
+  }
+
+  /** Scale from a sheet of paper around waist height. */
+  function paperScale() {
+    const halfWidth = torsoPx * (view === 'front' ? 0.75 : 0.65);
+    const region = { x0: centerX - halfWidth, x1: centerX + halfWidth, y0: shoulders.y + 0.35 * torsoPx, y1: hips.y + 0.4 * torsoPx };
+    const pixels = photo.getContext('2d').getImageData(0, 0, W, H).data;
+    const found = findPaper(pixels, W, region, paper);
+    if (!found) return null;
+    return { mode: 'paper', cmPerPx: found.cmPerPx, paperY: found.centerY, focalPx: assumedFocalPx(W, H), paperBox: found.box };
+  }
+}
+
+/** Marks a region of the mask as body (the paper lies on the body, in front of it). */
+function fillBox(mask, box) {
+  const { x0, y0, sx, sy } = mask.toImage;
+  const c0 = Math.max(0, Math.floor((box.x0 - x0) / sx));
+  const c1 = Math.min(mask.width, Math.ceil((box.x1 - x0) / sx));
+  const r0 = Math.max(0, Math.floor((box.y0 - y0) / sy));
+  const r1 = Math.min(mask.height, Math.ceil((box.y1 - y0) / sy));
+  for (let r = r0; r < r1; r++) mask.data.fill(1, r * mask.width + c0, r * mask.width + c1);
 }
 
 function toCanvas(source) {

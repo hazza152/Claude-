@@ -17,7 +17,7 @@
     <section id="gate" class="screen">
       <h1>BraFit</h1>
       <p class="lead">Find your bra size from two photos.</p>
-      <p>You'll take a front and a side photo in a fitted top or unpadded bra. You need to be 18 or over to use this.</p>
+      <p>You'll take a front and a side photo in a fitted top or unpadded bra, with a sheet of paper for scale. You need to be 18 or over to use this.</p>
       <p class="privacy">Your photos are processed on this device and are never uploaded or saved.</p>
       <button id="confirm-age" class="primary">I'm 18 or over</button>
     </section>
@@ -25,24 +25,46 @@
     <!-- Height and how-to -->
     <section id="setup" class="screen" hidden>
       <h1>Before you start</h1>
-      <label class="field">
-        <span>Your height (no shoes)</span>
-        <div class="height-inputs">
-          <span id="height-cm-wrap"><input id="height-cm" type="number" inputmode="decimal" min="120" max="220" step="0.5" placeholder="165"> cm</span>
-          <span id="height-ftin-wrap" hidden>
-            <input id="height-ft" type="number" inputmode="numeric" min="4" max="7" placeholder="5"> ft
-            <input id="height-in" type="number" inputmode="decimal" min="0" max="11.5" step="0.5" placeholder="5"> in
-          </span>
-          <button id="toggle-units" class="link" type="button">Use ft/in</button>
-        </div>
-        <small>Measured accurately: every centimetre out changes your results by about 0.6%.</small>
-      </label>
+      <p>The app needs something of a known size in each photo to measure you in centimetres. Use <strong>either</strong>:</p>
 
+      <div class="card">
+        <h2>A sheet of paper <span class="muted">(upper body is enough)</span></h2>
+        <label class="field compact">
+          <span>Paper size</span>
+          <select id="paper-size">
+            <option value="A4">A4</option>
+            <option value="Letter">US Letter</option>
+          </select>
+        </label>
+        <p>Fold a plain white sheet in half, and don't wear white.</p>
+        <ul>
+          <li><strong>Front photo:</strong> tuck the folded sheet into your waistband, landscape, flat against your stomach.</li>
+          <li><strong>Side photo:</strong> move it to your side, flat against your hip, facing the camera.</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <h2>Or your height <span class="muted">(whole body in photo)</span></h2>
+        <label class="field compact">
+          <span>Your height, no shoes</span>
+          <div class="height-inputs">
+            <span id="height-cm-wrap"><input id="height-cm" type="number" inputmode="decimal" min="120" max="220" step="0.5" placeholder="165"> cm</span>
+            <span id="height-ftin-wrap" hidden>
+              <input id="height-ft" type="number" inputmode="numeric" min="4" max="7" placeholder="5"> ft
+              <input id="height-in" type="number" inputmode="decimal" min="0" max="11.5" step="0.5" placeholder="5"> in
+            </span>
+            <button id="toggle-units" class="link" type="button">Use ft/in</button>
+          </div>
+          <small>Leave blank to use paper. It must be accurate: every centimetre out changes results by about 0.6%.</small>
+        </label>
+      </div>
+
+      <h2>Taking the photos</h2>
       <ol class="steps">
-        <li><strong>Wear an unpadded, unlined bra or a thin fitted top.</strong> Padding and loose tops throw off the measurement.</li>
-        <li><strong>Tie long hair up and take your shoes off.</strong></li>
-        <li><strong>Prop your phone upright at chest height, about 2.5 m away</strong>, so your whole body fits on screen. A plain wall behind you helps.</li>
-        <li><strong>Front photo:</strong> face the camera, feet together, arms held out about 45° from your sides.</li>
+        <li><strong>Wear an unpadded, unlined bra or a thin fitted top.</strong> Padding and push-up bras throw off the measurement.</li>
+        <li><strong>Tie long hair up.</strong></li>
+        <li><strong>Prop your phone upright at chest height, about 2 m away</strong>, at 1× zoom. Your head down to your hips must be in the photo (head to feet if you're using your height).</li>
+        <li><strong>Front photo:</strong> face the camera with your arms held out about 45° from your sides.</li>
         <li><strong>Side photo:</strong> turn sideways, arms relaxed by your sides. Stand naturally and breathe normally.</li>
       </ol>
       <p id="setup-error" class="error" hidden></p>

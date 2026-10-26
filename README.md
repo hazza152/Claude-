@@ -1,6 +1,7 @@
 # BraFit
 
-Find a bra size from two photos (front and side) plus your height. Runs in the browser on
+Find a bra size from two photos (front and side). Upper body is enough, using a folded
+sheet of paper for scale; or use the whole body plus your height. Runs in the browser on
 any phone. Photos are processed on the device and never uploaded or saved.
 
 ## Run it
@@ -19,8 +20,14 @@ on a phone. Photo upload works anywhere.
 
 1. **Pose check** (MediaPipe Pose Landmarker): one person, whole body in frame, upright,
    facing the camera or fully side-on, and arms clear of the body in the front photo.
-2. **Scale:** the whole figure is segmented to find the top of the head and the soles of the
-   feet. Your real height turns pixels into centimetres.
+2. **Scale** (`js/paper.js`, `js/scale.js`), from either:
+   - **A sheet of A4 or Letter, folded in half and tucked into the waistband**: on the
+     stomach for the front photo, on the hip for the side photo. Its vertical edge gives
+     cm per pixel. The sheet is nearer the camera than the torso's edges, so the scale is
+     corrected using the camera distance (from an assumed phone focal length) and the depth
+     or width measured in the other photo.
+   - **Height:** when the whole body is in frame and the height is entered, the head and
+     feet give the scale.
 3. **Torso outline** (MediaPipe selfie multiclass segmenter): the torso is cropped tightly
    before segmenting, because the model works at 256×256 and a tight crop gives several
    times more detail. Hair is excluded. Edges are found to sub-pixel accuracy.
@@ -67,7 +74,8 @@ In order of impact:
 3. **Band fit offsets** (`DEFAULT_CALIBRATION` in `sizing.js`): how much snugger a fitter's
    band is than a relaxed tape. This is a starting guess; "did this size fit?" feedback
    will tune it.
-4. **Height accuracy.** Every 1 cm of height error is about 0.6% on every measurement.
+4. **Scale accuracy.** In height mode, every 1 cm of height error is about 0.6% on every
+   measurement. In paper mode, a phone lens 20% different from the assumed one costs about 1.5%.
 5. **The shape advice thresholds** in `app.js` are placeholders.
 
 ## Privacy
