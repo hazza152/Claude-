@@ -99,3 +99,27 @@ test('circumference model matches tape measurements of real women (ANSUR II samp
     assert.ok(meanAbs < maxMeanError, `${section} mean error ${meanAbs}`);
   }
 });
+
+test('arms touching the body only matter at the bust and underbust', () => {
+  const body = makeBody();
+  const statureCm = body.stature * 100;
+  const views = {};
+  for (const view of ['front', 'side']) {
+    const r = renderView(body, view, { pxPerMetre: 900 });
+    const figure = figureExtent(r.mask);
+    views[view] = { r, figure, rows: toCentimetres(torsoRows(r.mask, r.centerX), { figure, centerX: r.centerX, statureCm }) };
+  }
+  const { r, figure } = views.front;
+  const input = (touching) => ({
+    front: views.front.rows.map((row) => ({ ...row, armTouching: touching(row.h) })),
+    side: views.side.rows,
+    facing: 1,
+    shoulderH: heightAt(r.shoulderY, { figure, statureCm }),
+    hipH: heightAt(r.hipY, { figure, statureCm }),
+  });
+  const bustH = body.bustHeight * 100;
+  // Hands on hips: arms touch around the waist, well below the underbust.
+  assert.doesNotThrow(() => measureTorso(input((h) => h < bustH - 25)));
+  // Arms down by the sides: touching at bust level.
+  assert.throws(() => measureTorso(input((h) => Math.abs(h - bustH) < 5)), (e) => e.kind === 'arms');
+});

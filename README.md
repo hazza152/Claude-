@@ -18,7 +18,8 @@ on a phone. Photo upload works anywhere.
 ## How it works
 
 1. **Pose check** (MediaPipe Pose Landmarker): one person, head to at least knees in frame, upright,
-   facing the camera or fully side-on, and arms clear of the body in the front photo.
+   facing the camera or fully side-on. In the front photo the arms must be clear of the body
+   at the bust and underbust lines (hands on hips does this).
 2. **Scale:** the figure is segmented to find the top of the head and, if they're in the
    photo, the soles of the feet. Your real height turns pixels into centimetres. If the
    photo stops at the knees, the floor is placed from the knees instead: in ANSUR II women

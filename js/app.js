@@ -8,7 +8,7 @@ const VIEWS = {
   front: {
     step: 'Photo 1 of 2',
     title: 'Front photo',
-    hint: 'Face the camera with your feet together and arms held out about 45° from your sides.',
+    hint: 'Face the camera with your feet together and your hands on your hips.',
   },
   side: {
     step: 'Photo 2 of 2',
@@ -175,12 +175,35 @@ $('upload').addEventListener('change', async (event) => {
   const file = event.target.files[0];
   event.target.value = '';
   if (!file) return;
+  let image;
   try {
-    await check(await createImageBitmap(file, { imageOrientation: 'from-image' }));
-  } catch {
-    message('capture-error', "That file couldn't be opened as a photo.");
+    image = await openImage(file);
+  } catch (error) {
+    console.error(error);
+    message('capture-error', `That file couldn't be opened as a photo (${error.message}).`);
+    return;
   }
+  await check(image);
 });
+
+/** Decodes an uploaded photo, upright. Falls back for browsers with partial support. */
+async function openImage(file) {
+  try {
+    return await createImageBitmap(file, { imageOrientation: 'from-image' });
+  } catch {}
+  try {
+    return await createImageBitmap(file);
+  } catch {}
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image();
+    img.src = url;
+    await img.decode();
+    return img;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
 
 async function check(image) {
   stopCamera();
@@ -194,7 +217,12 @@ async function check(image) {
     $('accept').hidden = false;
   } catch (error) {
     drawPlain(image);
-    message('capture-error', error instanceof PhotoProblem ? error.message : 'Something went wrong reading the photo. Please try again.');
+    message(
+      'capture-error',
+      error instanceof PhotoProblem
+        ? error.message
+        : `Something went wrong reading the photo. Please try again. (Details: ${error?.message ?? error})`,
+    );
     if (!(error instanceof PhotoProblem)) console.error(error);
     $('accept').hidden = true;
   } finally {
@@ -208,7 +236,8 @@ $('retake').addEventListener('click', () => openCapture(state.view));
 
 $('accept').addEventListener('click', () => {
   state.photos[state.view] = state.pending;
-  if (state.view === 'front') openCapture('side');
+  if (!state.photos.front) openCapture('front');
+  else if (!state.photos.side) openCapture('side');
   else showResult();
 });
 
@@ -249,6 +278,13 @@ function showResult() {
     });
   } catch (error) {
     if (!(error instanceof MeasureError)) console.error(error);
+    if (error.kind === 'arms') {
+      // Only the front photo needs redoing; keep the side one.
+      delete state.photos.front;
+      openCapture('front');
+      message('capture-error', error.message);
+      return;
+    }
     state.photos = {};
     openCapture('front');
     message('capture-error', `${error instanceof MeasureError ? error.message : 'Something went wrong.'} Please retake both photos.`);

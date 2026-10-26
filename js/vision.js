@@ -2,7 +2,7 @@
 // Photos never leave the browser: the models are downloaded once and run locally.
 
 import { FilesetResolver, ImageSegmenter, PoseLandmarker } from '@mediapipe/tasks-vision';
-import { figureExtent, heightAt, rowRuns, toCentimetres, torsoRows } from './measure.js';
+import { figureExtent, heightAt, toCentimetres, torsoRows } from './measure.js';
 
 const WASM = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm';
 const POSE_MODEL =
@@ -61,7 +61,14 @@ export class PhotoProblem extends Error {}
  * @param {'front'|'side'} view
  */
 export async function analysePhoto(source, view, statureCm) {
-  const { pose, segmenter, labels } = await loadModels();
+  let loaded;
+  try {
+    loaded = await loadModels();
+  } catch (error) {
+    console.error(error);
+    throw new PhotoProblem("Couldn't download the measuring tools. Check your internet connection and try again.");
+  }
+  const { pose, segmenter, labels } = loaded;
   const photo = toCanvas(source);
   const W = photo.width;
   const H = photo.height;
@@ -114,24 +121,20 @@ export async function analysePhoto(source, view, statureCm) {
   const torsoBox = squareBox(centerX, (shoulders.y + hips.y) / 2, torsoPx * 1.6);
   const torsoMask = segment(segmenter, labels, photo, torsoBox, { includeHair: false });
 
-  if (view === 'front') {
-    // The arms must be clear of the body or the chest looks wider than it is: no elbow or
-    // wrist between shoulder and hip height may sit inside the torso outline.
-    for (const i of [L_ELBOW, R_ELBOW, L_WRIST, R_WRIST]) {
-      const p = lm[i];
-      if (p.y <= shoulders.y || p.y >= hips.y) continue;
-      const row = Math.round((p.y - torsoBox.y) / torsoMask.toImage.sy - 0.5);
-      const cx = (centerX - torsoBox.x) / torsoMask.toImage.sx;
-      const px = (p.x - torsoBox.x) / torsoMask.toImage.sx;
-      const torso = rowRuns(torsoMask.data, torsoMask.width, row).find(([a, b]) => a <= cx && cx <= b);
-      if (torso && px > torso[0] - 2 && px < torso[1] + 2) {
-        throw new PhotoProblem('Hold your arms out from your sides so there is a gap between your arms and body.');
-      }
-    }
-  }
-
   const scale = { figure, statureCm };
   const outline = torsoRows(torsoMask, centerX);
+  if (view === 'front') {
+    // Where an arm rests against the body, the outline includes it and the chest looks wider
+    // than it is. Mark those rows; the measurement only needs the bust and underbust clear.
+    const arms = [[L_SHOULDER, L_ELBOW, L_WRIST], [R_SHOULDER, R_ELBOW, R_WRIST]].map((ids) => ids.map((i) => lm[i]));
+    const margin = 0.02 * torsoPx;
+    for (const row of outline) {
+      row.armTouching = arms.some((arm) => {
+        const x = armXAt(arm, row.y);
+        return x !== null && x > row.left - margin && x < row.right + margin;
+      });
+    }
+  }
   return {
     view,
     photo,
@@ -149,11 +152,25 @@ export async function analysePhoto(source, view, statureCm) {
   };
 }
 
+/** Where an arm (shoulder → elbow → wrist) crosses height y, or null if it doesn't. */
+function armXAt(points, y) {
+  for (let i = 0; i + 1 < points.length; i++) {
+    const a = points[i];
+    const b = points[i + 1];
+    if (y >= Math.min(a.y, b.y) && y <= Math.max(a.y, b.y) && a.y !== b.y) {
+      return a.x + ((b.x - a.x) * (y - a.y)) / (b.y - a.y);
+    }
+  }
+  return null;
+}
+
 function toCanvas(source) {
-  const k = Math.min(1, MAX_PHOTO_SIDE / Math.max(source.width, source.height));
+  const width = source.naturalWidth || source.width;
+  const height = source.naturalHeight || source.height;
+  const k = Math.min(1, MAX_PHOTO_SIDE / Math.max(width, height));
   const canvas = document.createElement('canvas');
-  canvas.width = Math.round(source.width * k);
-  canvas.height = Math.round(source.height * k);
+  canvas.width = Math.round(width * k);
+  canvas.height = Math.round(height * k);
   canvas.getContext('2d').drawImage(source, 0, 0, canvas.width, canvas.height);
   return canvas;
 }

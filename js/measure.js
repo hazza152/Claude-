@@ -85,6 +85,7 @@ export function toCentimetres(rows, { figure, centerX, statureCm }) {
     h: (figure.floorY - r.y) * cmPerPx,
     left: (r.left - centerX) * cmPerPx,
     right: (r.right - centerX) * cmPerPx,
+    armTouching: Boolean(r.armTouching),
   }));
 }
 
@@ -182,6 +183,16 @@ export function measureTorso(input, options = {}) {
     });
   }
   if (underbust === null) throw new MeasureError('bust', 'Could not find the underbust line.');
+
+  // The front photo's width is only trustworthy where the arms are clear of the body.
+  for (const i of [bust, underbust]) {
+    if (front.some((r) => r.armTouching && Math.abs(r.h - heights[i]) <= 1.5)) {
+      throw new MeasureError(
+        'arms',
+        'Your arms were touching your sides at chest level in the front photo. Put your hands on your hips so there is a gap, and retake it.',
+      );
+    }
+  }
 
   return {
     underbustCm: tapeCircumference(width[underbust], depth[underbust], model.underbust),
